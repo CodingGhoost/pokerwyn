@@ -1,0 +1,26 @@
+{
+  "name": "backend",
+  "type": "module",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node src/main.js",
+    "dev": "nodemon src/main.js",
+    "test": "vitest run"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "pokersolver": "^2.1.4",
+    "ws": "^8.18.3",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "eslint": "^9.37.0",
+    "nodemon": "^3.1.10",
+    "prettier": "^3.6.2",
+    "vitest": "^3.2.4"
+  }
+}
