@@ -23,15 +23,14 @@ export class Pot {
         if (winners.length === 0 || this.amount === 0) return [];
 
         const numWinners = winners.length;
-        const share = Math.floor(this.amount / numWinners);
-        const remainder = this.total % numWinners;
+        const share = this.amount /numWinners;
 
         const payouts = winners.map((name) => ({
             name,
-            total: share
+            amount: share,
         }));
 
-        this.total = remainder;
-        return payouts
+        this.amount = 0;
+        return payouts;
     }
 }
