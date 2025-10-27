@@ -1,16 +1,18 @@
+"use strict";
+
 export class Deck {
     constructor() {
         this.reset();
     }
 
     reset() {
-        const suits = [s, h, c, d];
+        const suits = ['s', 'h', 'c', 'd'];
         const values = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];
 
         this.cards = [];
         for (const value of values) {
             for (const suit of suits) {
-                this.cards.push('${value}${suit}');
+                this.cards.push(`${value}${suit}`);
             }
         }
     }
@@ -28,6 +30,6 @@ export class Deck {
         }
         return this.cards.pop();
     }
-
-    
 }
+
+module.exports = Deck;

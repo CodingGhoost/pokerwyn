@@ -1,38 +1,33 @@
 "use strict";
 
 class Snapshot {
-    constructor({ players, communityCards, pots, dealerIndex, bettingRound, playerIndex}) {
-        this.players = players.map(p => ({
-            id: p.id,
+    constructor(table) {
+        this.players = table.players.map(p => ({
             name: p.name,
             stack: p.stack,
             currentBet: p.currentBet,
-            status: p.status,
-            cards: p.getCards ? p.getCards() : [],
+            state: p.state,
+            cards: p.getCards(),
         }));
 
-        this.communityCards = [...communityCards];
-        this.pots = pots.map(pot => ({
-            amount: pot.amount,
-            contributors: Array.from(pot.contributors.entries()),
+        this.communityCards = [...table.communityCards];
+        this.pots = table.pot.map(p => ({
+            total: p.total,
+            contributions: Array.from(p.contributions.entries()),
         }));
 
-        this.dealerIndex = dealerIndex;
-        this.bettingRound = bettingRound;
-        this.playerIndex = playerIndex;
+        this.buttonIndex = table.buttonIndex;
+        this.currentBet = table.currentBet;
+        this.handInProgress = table.handInProgress;
         this.timestamp = Date.now();
     }
 
     toJSON() {
-        return {
-            players: this.players,
-            communityCards: this.communityCards,
-            pots: this.pots,
-            dealerIndex: this.dealerIndex,
-            bettingRound: this.bettingRound,
-            playerIndex: this.playerIndex,
-            timestamp: this.timestamp,
-        };
+        return JSON.stringify(this, null, 2);
+    }
+
+    static create(table) {
+        return new Snapshot(table);
     }
 }
 

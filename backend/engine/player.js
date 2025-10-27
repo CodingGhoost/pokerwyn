@@ -24,7 +24,7 @@ const HandRank = Object.freeze({
 
 class Player {
   constructor(seatIndex, name) {
-    this.seatIndex = Intparse(seatIndex);
+    this.seatIndex = parseInt(seatIndex);
     this.name = name;
     this.hand = [];
     this.stack = 0;
@@ -32,7 +32,7 @@ class Player {
     this.state = PlayerState.READY;
     this.isAllIn = false;
     this.isButton = false;
-    this.handDesc = HandRank.HIGH_CARD; /*wait for showdonw logic*/
+    this.handDesc = null; /*wait for showdonw logic*/
   }
 
   getSeat() {
@@ -74,7 +74,7 @@ class Player {
   }
 
   allIn() {
-    if (this.stack > 0 && this.satge === 1) {
+    if (this.stack > 0) {
       this.currentBet += this.stack;
       this.isAllIn = true;
       this.stack = 0;
@@ -89,13 +89,13 @@ class Player {
   addCards(cards) {
     // 确保手牌不超过2张
     if (this.hand.length + cards.length <= 2) {
-      this.hand = [this.hand, cards];
+      this.hand.push(...cards);
     }
   }
 
   clearCards() {
     this.hand = [];
-    this.handDesc = "";
+    this.handDesc = null;
   }
 
   getCards() {
@@ -112,18 +112,18 @@ class Player {
   }
 
   setName(NewName) {
-    this.name == NewName;
+    this.name = NewName;
   }
 
   setStack(NewStack) {
     /*player set his/her chips*/
-    this.stack == NewStack;
+    this.stack = NewStack;
   }
 
   resetStage() {
     /*after every showdown*/
-    if (this.state == PlayerState.FOLD || this.state == Player.READY) {
-      this.state == PlayerState.IN_GAME;
+    if (this.state === PlayerState.FOLDED || this.state === Player.READY) {
+      this.state = PlayerState.IN_GAME;
     }
   }
 
@@ -139,3 +139,5 @@ class Player {
     this.state = PlayerState.FOLDED;
   }
 }
+
+module.exports = { Player, PlayerState };

@@ -10,11 +10,11 @@ class Showdown {
 
         if (activePlayers.length === 0) return [];
 
-        const hands = activePlayers.map((player) => {
-            const allCards = [...player.getCards(), ...communityCards];
+        const hands = activePlayers.map((p) => {
+            const allCards = [...p.getCards(), ...communityCards];
             const solved = Hand.solve(allCards);
             return {
-                player,
+                player: p,
                 hand: solved,
             };
         });
@@ -26,44 +26,39 @@ class Showdown {
             .filter((h) => winningHands.includes(h.hand))
             .map((h) => h.player);
         
-        for (const { player, hand } of hands) {
-            player.handDesc = {
-                name: hand.name,
-                descr: hand.descr,
-                rank: hand.rank,
-                cards: hand.cards.map((c) => c.value + c.suit),
-            };
-        }
+        // for (const { player, hand } of hands) {
+        //     player.handDesc = {
+        //         name: hand.name,
+        //         descr: hand.descr,
+        //         rank: hand.rank,
+        //         cards: hand.cards.map((c) => c.value + c.suit),
+        //     };
+        // }
 
-        let payout = [];
+        let payouts = [];
         if (pots && pots.length > 0) {
             for (const pot of pots) {
                 const eligibleWinners = winners.filter((w) =>
-                    pot.contributors.has(w.seatIndex)
+                    pot.contributions.has(w.name)
                 );
 
                 const potPayouts = pot.distribute(
-                    eligibleWinners.map((w) => w.seatIndex)
+                    eligibleWinners.map((w) => w.name)
                 );
 
-                for (const payout of potPayouts) {
-                    const recipients = players.find(
-                        (p) => p.seatIndex === payout.playerId
+                for (const pay of potPayouts) {
+                    const player = players.find(
+                        (p) => p.name === pay.name
                     );
-                    if (recipient) recipient.stack += payout.amount;
+                    if (player) player.stack += pay.amount;
                 }
 
                 payouts.push(...potPayouts);
             }
         }
 
-        return {
-            winners: winners.map((w) => ({
-                seatIndex: w.seatIndex,
-                name: w.name,
-                hand: w.handDesc,
-            })),
-            payouts,
-        };
+        return { winners, payouts };
     }
 }
+
+module.exports = { Showdown };
