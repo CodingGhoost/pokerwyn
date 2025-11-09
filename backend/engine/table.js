@@ -147,6 +147,44 @@ class Table {
         return Snapshot.create(this);
     }
 
+    getState() {
+        return {
+            players: this.players.map(p => ({
+                name: p.name,
+                stack: p.stack,
+                state: p.state,
+                isAllIn: p.isAllIn,
+                bet: p.currentBet,
+                hand: p.getCards(),
+            })),
+            communityCards: this.communityCards,
+            pot: this.pot.map(p => p.amount),
+            currentBet: this.currentBet,
+            handInProgress: this.handInProgress,
+        };
+    }
+
+    broadcast(io) {
+        io.emit("table:update", this.getState());
+    }
+
+    isHandOver() {
+        const active = this.getActivePlayers().filter(p => p.state === PlayerState.IN_GAME);
+        return active.length <= 1;
+    }
+
+    resetForNextHand() {
+        this.communityCards = [];
+        this.pot = [new Pot()];
+        this.currentBet = 0;
+        this.handInProgress = false;
+        for (const p of this.players) {
+            p.resetBet();
+            if (p.state !== PlayerState.LEFT) {
+                p.state = PlayerState.READY;
+            }
+        }
+    }
 }
 
 module.exports = Table;

@@ -1,6 +1,6 @@
 "use strict";
 
-export class Deck {
+class Deck {
     constructor() {
         this.reset();
     }
