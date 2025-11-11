@@ -1,4 +1,4 @@
-export class Pot {
+class Pot {
     constructor() {
         this.total = 0; // Total pot size
         this.contributions = new Map(); // Map<playerName, currentBet>

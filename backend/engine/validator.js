@@ -90,7 +90,7 @@ class Validator {
 
     validateNextBettingRound() {
         const num = this.table.communityCards.length;
-        if (n > 5) throw new Error(`Cannot deal more than 5 community cards.`);
+        if (num > 5) throw new Error(`Cannot deal more than 5 community cards.`);
         return true;
     }
 

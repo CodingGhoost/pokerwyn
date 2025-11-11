@@ -1,12 +1,12 @@
 "use strict";
 
 const PlayerState = {
-  READY: "ready", // 准备就绪
-  IN_GAME: "in_game", // 在游戏中
-  FOLDED: "folded", // 已弃牌
-  AWAY: "away", // 离开座位
-  LEFT: "left", // 已离开游戏
-  OFFLINE: "offline",
+  READY: "READY", // 准备就绪
+  IN_GAME: "IN_GAME", // 在游戏中
+  FOLDED: "FOLDED", // 已弃牌
+  AWAY: "AWAY", // 离开座位
+  LEFT: "LEFT", // 已离开游戏
+  OFFLINE: "OFFLINE",
 };
 
 const HandRank = Object.freeze({

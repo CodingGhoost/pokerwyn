@@ -8,7 +8,7 @@ class Showdown {
             (p) => p.state !== "folded" && p.state !== "left"
         );
 
-        if (activePlayers.length === 0) return [];
+        if (activePlayers.length === 0) return { winners: [], payouts: [] };
 
         const hands = activePlayers.map((p) => {
             const allCards = [...p.getCards(), ...communityCards];

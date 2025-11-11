@@ -23,7 +23,19 @@ class Snapshot {
     }
 
     toJSON() {
-        return JSON.stringify(this, null, 2);
+        return {
+            players: this.players,
+            communityCards: this.communityCards,
+            pots: this.pots,
+            buttonIndex: this.buttonIndex,
+            currentBet: this.currentBet,
+            handInProgress: this.handInProgress,
+            timestamp: this.timestamp,
+        };
+    }
+
+    toJSONString() {
+        return JSON.stringify(this.toJSON(), null, 2);
     }
 
     static create(table) {
