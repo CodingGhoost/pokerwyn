@@ -4,8 +4,8 @@ const http = require("http");
 const express = require("express");
 const { Server } = require("socket.io");
 
-const Table = require("./table");
-const Player = require("./player");
+const Table = require("../engine/table");
+const Player = require("../engine/player");
 
 const app = express();
 const server = http.createServer(app);
