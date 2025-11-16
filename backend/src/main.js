@@ -5,7 +5,7 @@ const express = require("express");
 const { Server } = require("socket.io");
 
 const Table = require("../engine/table");
-const Player = require("../engine/player");
+const { Player } = require("../engine/player"); // ✅ correct
 
 const app = express();
 const server = http.createServer(app);
@@ -15,6 +15,7 @@ const table = new Table(9);
 
 io.on("connection", (socket) => {
   console.log(`🟢 Player connected: ${socket.id}`);
+  socket.emit("state", table.getState());
 
   socket.on("join", ({ name, stack }) => {
     const newPlayer = new Player(table.players.length, name);
@@ -51,6 +52,8 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
+    table.removePlayerBySocketId(socket.id);
+    table.broadcast(io);
     console.log(`🔴 Player disconnected: ${socket.id}`);
   });
 });

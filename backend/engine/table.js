@@ -154,25 +154,30 @@ class Table {
     }
 
 
+    // inside Table.js
+    broadcast(io) {
+        io.emit("state", this.getState());
+    }
+
     getState() {
         return {
             players: this.players.map(p => ({
-                name: p.name,
-                stack: p.stack,
-                state: p.state,
-                isAllIn: p.isAllIn,
-                bet: p.currentBet,
-                hand: p.getCards(),
-            })),
+            name: p.name,
+            stack: p.stack,
+            hand: p.hand,
+            isActive: p.isActive,
+        })),
             communityCards: this.communityCards,
-            pot: this.pot.map(p => p.amount),
+            pot: this.pot,
             currentBet: this.currentBet,
-            handInProgress: this.handInProgress,
+            currentPlayer: this.currentPlayerIndex,
+            stage: this.stage, // e.g. 'preflop', 'flop', 'turn', 'river', 'showdown'
         };
     }
 
-    broadcast(io) {
-        io.emit("table:update", this.getState());
+    removePlayerBySocketId(id) {
+        const index = this.players.findIndex(p => p.socketId === id);
+        if (index !== -1) this.players.splice(index, 1);
     }
 
     isHandOver() {
