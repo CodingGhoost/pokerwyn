@@ -33,6 +33,8 @@ class Player {
     this.isAllIn = false;
     this.isButton = false;
     this.handDesc = null; /*wait for showdonw logic*/
+    this.socketId = null; // store socket id when they join
+    this.actedThisRound = false; // optional: mark whether player acted in current betting round
   }
 
   getSeat() {
@@ -137,6 +139,10 @@ class Player {
 
   fold() {
     this.state = PlayerState.FOLDED;
+  }
+
+  get isActive() {
+    return this.state === PlayerState.IN_GAME && this.stack > 0 && !this.isAllIn;
   }
 }
 

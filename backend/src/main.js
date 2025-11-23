@@ -17,19 +17,25 @@ io.on("connection", (socket) => {
   console.log(`🟢 Player connected: ${socket.id}`);
   socket.emit("state", table.getState());
 
-  socket.on("join", ({ name, stack }) => {
-    const newPlayer = new Player(table.players.length, name);
-    newPlayer.stack = stack;
-    const success = table.addPlayer(newPlayer);
+    socket.on("join", ({ name, stack }) => {
+      const seatIndex = table.players.length;
+      const newPlayer = new Player(seatIndex, name);
+      newPlayer.stack = stack;
+      newPlayer.socketId = socket.id; // <--- store socket id for later removal
+      const success = table.addPlayer(newPlayer);
 
-    if (!success) {
-      socket.emit("error", "Table is full");
-      return;
-    }
+      if (!success) {
+        socket.emit("error", "Table is full");
+        return;
+      }
 
-    console.log(`👤 ${name} joined with ${stack} bb`);
-    table.broadcast(io);
-  });
+      // return assigned seat to the joining client (useful)
+      socket.emit("joined", { seatIndex, name, stack });
+
+      console.log(`👤 ${name} (seat ${seatIndex}) joined with ${stack} bb`);
+      table.broadcast(io);
+    });
+
 
   socket.on("action", ({ name, action, amount }) => {
     table.playerAction(name, action, amount);
