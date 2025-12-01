@@ -43,61 +43,80 @@ let globalStateCounter = 0; // increments each time any client receives a server
  * - seatIndex: index we expect server to store in table.players (order of join)
  */
 function createBot(name, seatIndex) {
-  const socket = io(SERVER_URL, { /* defaults (allow polling fallback) */ });
+  const socket = io(SERVER_URL);
 
   const bot = {
     name,
     seatIndex,
     socket,
-    lastActedStateCounter: -1, // prevents multiple actions per same state snapshot
+    lastSeenState: null, // Track the actual state object
     connected: false,
   };
 
   socket.on("connect", () => {
     bot.connected = true;
     console.log(`[${name}] connected -> socketId=${socket.id}`);
-    // join using your server's expected payload shape
     socket.emit("join", { name, stack: START_STACK });
   });
 
   socket.on("state", (state) => {
-    // increment a global monotonic counter for each new state snapshot seen by this client
-    globalStateCounter += 1;
-    const stateCounter = globalStateCounter;
+    const stateSignature = JSON.stringify({
+      currentPlayer: state.currentPlayer,
+      currentBet: state.currentBet,
+      stage: state.stage,
+      communityCards: state.communityCards,
+      playerStates: state.players.map(p => ({ 
+        name: p.name, 
+        state: p.state, 
+        currentBet: p.currentBet,
+        stack: p.stack 
+      }))
+    });
 
-    // find our index in the state.players array (server returns players in join order)
+    if (bot.lastSeenState === stateSignature) {
+      return;
+    }
+    bot.lastSeenState = stateSignature;
+
     const players = state.players || [];
     const myIndex = players.findIndex(p => p.name === name);
 
-    // log (compact)
-    // only log occasionally to avoid spamming
-    console.log(`[${name}] state received. players=${players.map(p => p.name).join(",")}; currentPlayer=${state.currentPlayer}`);
+    // Check if hand ended and we should start a new one
+    if (state.currentPlayer === -1 && state.stage !== 'waiting' && state.handInProgress === false) {
+      // Hand is over, wait a bit then start new hand
+      if (name === 'Bot1') { // Let Bot1 be responsible for starting
+        setTimeout(() => {
+          console.log(`[${name}] Starting new hand...`);
+          socket.emit("start-hand");
+        }, 2000); // 2 second delay between hands
+      }
+      return;
+    }
 
-    // if it's our turn (server sets currentPlayer as index), attempt to act
+    if (Math.random() < 0.1) {
+      console.log(`[${name}] state received. currentPlayer=${state.currentPlayer}, stage=${state.stage}`);
+    }
+
     if (myIndex !== -1 && state.currentPlayer === myIndex) {
-      // ensure we only act once per state snapshot
-      if (bot.lastActedStateCounter === stateCounter) return;
-      bot.lastActedStateCounter = stateCounter;
+      const myPlayer = players[myIndex];
+      
+      if (myPlayer.state !== 'IN_GAME') {
+        return;
+      }
 
-      // basic decision
       const chosen = pickWeightedAction();
 
       switch (chosen) {
         case "CALL":
-          // amount not needed for CALL (server calculates), but send 0
           console.log(`[${name}] -> CALL`);
           socket.emit("action", { name, action: "CALL", amount: 0 });
           break;
 
         case "BET":
-          // bet a simple amount: currentBet + 10 or a small fixed amount
-          // state.currentBet is the table's current bet
-          {
-            const currentBet = state.currentBet || 0;
-            const betAmount = Math.max(10, Math.floor(currentBet + 10));
-            console.log(`[${name}] -> BET ${betAmount}`);
-            socket.emit("action", { name, action: "BET", amount: betAmount });
-          }
+          const currentBet = state.currentBet || 0;
+          const betAmount = Math.max(10, Math.floor(currentBet + 10));
+          console.log(`[${name}] -> BET ${betAmount}`);
+          socket.emit("action", { name, action: "BET", amount: betAmount });
           break;
 
         case "FOLD":

@@ -38,8 +38,10 @@ io.on("connection", (socket) => {
 
 
   socket.on("action", ({ name, action, amount }) => {
-    table.playerAction(name, action, amount);
-    table.broadcast(io);
+    const success = table.playerAction(name, action, amount);
+    if (success) {
+      table.broadcast(io); // Only broadcast if action was successful
+    }
   });
 
   socket.on("start-hand", () => {

@@ -85,8 +85,15 @@ class Player {
 
   resetBet() {
     this.currentBet = 0;
-    this.isAllIn = false;
   }
+
+  resetForNewHand() {
+    this.currentBet = 0;
+    this.isAllIn = false;
+    this.clearCards();
+    this.actedThisRound = false;
+}
+
 
   addCards(cards) {
     // 确保手牌不超过2张
