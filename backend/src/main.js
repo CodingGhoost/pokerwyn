@@ -17,30 +17,46 @@ io.on("connection", (socket) => {
   console.log(`🟢 Player connected: ${socket.id}`);
   socket.emit("state", table.getState());
 
-    socket.on("join", ({ name, stack }) => {
-      const seatIndex = table.players.length;
-      const newPlayer = new Player(seatIndex, name);
-      newPlayer.stack = stack;
-      newPlayer.socketId = socket.id; // <--- store socket id for later removal
-      const success = table.addPlayer(newPlayer);
+  let actionTimeout = null;
 
-      if (!success) {
-        socket.emit("error", "Table is full");
-        return;
-      }
+  socket.on("join", ({ name, stack }) => {
+    const seatIndex = table.players.length;
+    const newPlayer = new Player(seatIndex, name);
+    newPlayer.stack = stack;
+    newPlayer.socketId = socket.id;
+    const success = table.addPlayer(newPlayer);
 
-      // return assigned seat to the joining client (useful)
-      socket.emit("joined", { seatIndex, name, stack });
+    if (!success) {
+      socket.emit("error", "Table is full");
+      return;
+    }
 
-      console.log(`👤 ${name} (seat ${seatIndex}) joined with ${stack} bb`);
-      table.broadcast(io);
-    });
-
+    socket.emit("joined", { seatIndex, name, stack });
+    console.log(`👤 ${name} (seat ${seatIndex}) joined with ${stack} bb`);
+    table.broadcast(io);
+  });
 
   socket.on("action", ({ name, action, amount }) => {
+    if (actionTimeout) {
+      clearTimeout(actionTimeout);
+      actionTimeout = null;
+    }
+
     const success = table.playerAction(name, action, amount);
     if (success) {
-      table.broadcast(io); // Only broadcast if action was successful
+      table.broadcast(io);
+      
+      // Set timeout for next player (30 seconds)
+      if (table.currentPlayerIndex !== -1) {
+        actionTimeout = setTimeout(() => {
+          const currentPlayer = table.players[table.currentPlayerIndex];
+          if (currentPlayer) {
+            console.log(`⏰ ${currentPlayer.name} timed out - auto-folding`);
+            table.playerAction(currentPlayer.name, "FOLD", 0);
+            table.broadcast(io);
+          }
+        }, 30000);
+      }
     }
   });
 

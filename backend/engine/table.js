@@ -5,7 +5,7 @@ const { Showdown } = require("./showdown");
 const { PlayerState } = require("./player");
 
 class Table {
-    constructor( maxPlayers = 9, deck = null ) {
+    constructor(maxPlayers = 9, deck = null, smallBlind = 5, bigBlind = 10) {
         this.maxPlayers = maxPlayers;
         this.players = [];
         this.deck = deck ?? new Deck();
@@ -15,6 +15,66 @@ class Table {
         this.currentBet = 0;
         this.currentPlayerIndex = 0;
         this.handInProgress = false;
+        this.smallBlind = smallBlind;
+        this.bigBlind = bigBlind;
+    }
+
+    startHand() {
+        if (this.players.length < 2) return false;
+
+        this.buttonIndex = (this.buttonIndex + 1) % this.players.length;
+
+        if (this.deck && typeof this.deck.reset === "function") this.deck.reset();
+        if (this.deck && typeof this.deck.shuffle === "function") this.deck.shuffle();
+
+        this.communityCards = [];
+        this.pot = [new Pot()];
+        this.handInProgress = true;
+        this.currentBet = this.bigBlind; // Start with big blind as current bet
+        this.stage = 'preflop';
+
+        for (const p of this.players) {
+            p.resetForNewHand();
+            if (p.state !== PlayerState.LEFT && p.stack > 0) {
+                p.state = PlayerState.IN_GAME;
+            }
+        }
+
+        // Post blinds
+        const sbIndex = (this.buttonIndex + 1) % this.players.length;
+        const bbIndex = (this.buttonIndex + 2) % this.players.length;
+        
+        const sbPlayer = this.players[sbIndex];
+        const bbPlayer = this.players[bbIndex];
+        
+        if (sbPlayer && sbPlayer.state === PlayerState.IN_GAME) {
+            const sbAmount = Math.min(this.smallBlind, sbPlayer.stack);
+            sbPlayer.bet(sbAmount);
+            this.pot[0].addContribution(sbPlayer.name, sbAmount);
+            console.log(`🎲 ${sbPlayer.name} posts small blind: ${sbAmount}`);
+        }
+        
+        if (bbPlayer && bbPlayer.state === PlayerState.IN_GAME) {
+            const bbAmount = Math.min(this.bigBlind, bbPlayer.stack);
+            bbPlayer.bet(bbAmount);
+            this.pot[0].addContribution(bbPlayer.name, bbAmount);
+            console.log(`🎲 ${bbPlayer.name} posts big blind: ${bbAmount}`);
+        }
+
+        // Deal cards
+        for (let i = 0; i < 2; i++) {
+            for (const p of this.players) {
+                if (p.state === PlayerState.IN_GAME) {
+                    p.addCards([this.deck.deal()]);
+                }
+            }
+        }
+
+        // First to act is after big blind
+        this.currentPlayerIndex = this.getNextActivePlayer(bbIndex);
+        console.log(`🎯 Action starts with ${this.players[this.currentPlayerIndex]?.name}`);
+        
+        return true;
     }
 
     addPlayer(player) {
@@ -45,47 +105,13 @@ class Table {
         for (let i = 1; i <= n; i++) {
             const index = (startIndex + i) % n;
             const p = this.players[index];
-            if (p.state === PlayerState.IN_GAME && p.stack > 0) {
+            
+            // Player must be IN_GAME, have chips, and not be all-in
+            if (p.state === PlayerState.IN_GAME && p.stack > 0 && !p.isAllIn) {
                 return index;
             }
         }
         return -1; // no active players
-    }
-
-
-
-    startHand() {
-        if (this.players.length < 2) return false;
-
-        this.buttonIndex = (this.buttonIndex + 1) % this.players.length;
-
-        if (this.deck && typeof this.deck.reset === "function") this.deck.reset();
-        if (this.deck && typeof this.deck.shuffle === "function") this.deck.shuffle();
-
-        this.communityCards = [];
-        this.pot = [new Pot()];
-        this.handInProgress = true;
-        this.currentBet = 0;
-        this.stage = 'preflop';
-
-        for (const p of this.players) {
-            p.resetForNewHand(); // Use new method instead of individual calls
-            if (p.state !== PlayerState.LEFT && p.stack > 0) {
-                p.state = PlayerState.IN_GAME;
-            }
-        }
-
-        // deal two cards
-        for (let i = 0; i < 2; i++) {
-            for (const p of this.players) {
-                if (p.state === PlayerState.IN_GAME) {
-                    p.addCards([this.deck.deal()]);
-                }
-            }
-        }
-
-        this.currentPlayerIndex = this.getNextActivePlayer(this.buttonIndex);
-        return true;
     }
 
 
@@ -120,9 +146,24 @@ class Table {
         }
     }
 
+    logDetailedState() {
+        console.log("\n" + "=".repeat(60));
+        console.log("DETAILED STATE:");
+        console.log(`  Stage: ${this.stage}, CurrentBet: ${this.currentBet}`);
+        console.log(`  CurrentPlayerIndex: ${this.currentPlayerIndex}`);
+        console.log("  Players:");
+        this.players.forEach((p, i) => {
+            console.log(`    [${i}] ${p.name}: state=${p.state}, bet=${p.currentBet}, stack=${p.stack}, allIn=${p.isAllIn}, acted=${p.actedThisRound}`);
+        });
+        console.log("=".repeat(60) + "\n");
+    }
+
     playerAction(name, action, amount = 0) {
         const player = this.players.find(p => p.name === name);
-        if (!player) return false;
+        if (!player) {
+            console.log(`❌ Player ${name} not found`);
+            return false;
+        }
 
         const playerIndex = this.players.findIndex(p => p.name === name);
         if (playerIndex !== this.currentPlayerIndex) {
@@ -151,8 +192,19 @@ class Table {
 
             case "CALL": {
                 const callAmount = Math.max(0, this.currentBet - player.currentBet);
-                if (callAmount > 0 && player.bet(callAmount)) {
-                    this.pot[0].addContribution(name, callAmount);
+                if (callAmount > 0) {
+                    // If player can't afford full call, go all-in with what they have
+                    const actualAmount = Math.min(callAmount, player.stack);
+                    if (actualAmount > 0) {
+                        player.bet(actualAmount);
+                        this.pot[0].addContribution(name, actualAmount);
+                        
+                        // If they bet everything, mark as all-in
+                        if (player.stack === 0) {
+                            player.isAllIn = true;
+                            console.log(`💰 ${name} calls all-in for ${actualAmount} (needed ${callAmount})`);
+                        }
+                    }
                 }
                 player.actedThisRound = true;
                 break;
@@ -195,27 +247,30 @@ class Table {
             for (const p of this.players) {
                 p.actedThisRound = false;
                 if (p.state === PlayerState.IN_GAME) {
-                    p.currentBet = 0; // ✅ Reset bets for new round
+                    p.currentBet = 0;
                 }
             }
             this.currentBet = 0;
-
-            // Check if all remaining players are all-in
+            
+            // Check if all remaining players are all-in (no one can act)
             const activePlayers = this.players.filter(p => 
-                p.state === PlayerState.IN_GAME && !p.isAllIn
+                (p.state === PlayerState.IN_GAME || p.isAllIn)
+            );
+            const canActPlayers = this.players.filter(p => 
+                p.state === PlayerState.IN_GAME && !p.isAllIn && p.stack > 0
             );
             
-            if (activePlayers.length === 0) {
-                // Everyone is all-in, run out the board
-                console.log("🎰 All players all-in - running out the board");
+            if (canActPlayers.length === 0 && activePlayers.length > 1) {
+                // Everyone is all-in or folded, run out the board
+                console.log("🎰 All remaining players all-in - running out the board");
                 this.runOutBoard();
                 return true;
             }
             
-            // Move to next betting round (or showdown if river is complete)
+            // Move to next betting round
             this.nextBettingRound();
             
-            // Check if hand ended during nextBettingRound
+            // Check if hand ended
             if (!this.handInProgress) {
                 console.log("🏁 Hand completed via showdown");
                 return true;
@@ -224,57 +279,91 @@ class Table {
             // Set first player for new betting round
             this.currentPlayerIndex = this.getNextActivePlayer(this.buttonIndex);
             console.log(`🎯 New round - first to act: ${this.currentPlayerIndex}`);
+            
+            // Safety check
+            if (this.currentPlayerIndex === -1) {
+                console.log("⚠️ No active player found for new round - ending hand");
+                this.resolveShowdown();
+                this.handInProgress = false;
+                return true;
+            }
         } else {
-            // Advance to next active player
-            this.currentPlayerIndex = this.getNextActivePlayer(this.currentPlayerIndex);
+            // Betting round not complete - advance to next active player
+            const nextIndex = this.getNextActivePlayer(this.currentPlayerIndex);
+            
+            console.log(`🔄 Advancing from player ${this.currentPlayerIndex} (${this.players[this.currentPlayerIndex].name}) to ${nextIndex} (${nextIndex >= 0 ? this.players[nextIndex].name : 'NONE'})`);
+            
+            this.currentPlayerIndex = nextIndex;
+            
+            // Safety check: if no valid next player found
+            if (this.currentPlayerIndex === -1) {
+                console.log(`⚠️ No next active player found after ${name}'s action`);
+                
+                const canActPlayers = this.players.filter(p => 
+                    p.state === PlayerState.IN_GAME && !p.isAllIn && p.stack > 0
+                );
+                
+                console.log(`   Can act players: ${canActPlayers.map(p => p.name).join(', ')}`);
+                
+                if (canActPlayers.length === 0) {
+                    // No one can act - should have been caught by isBettingRoundComplete
+                    console.log(`⚠️ Forcing betting round to complete`);
+                    // Re-check betting round completion
+                    if (this.isBettingRoundComplete()) {
+                        // Trigger the completion logic by recursing
+                        return this.playerAction(name, "CHECK", 0);
+                    }
+                }
+                
+                // Hand is over
+                this.resolveShowdown();
+                this.handInProgress = false;
+                this.currentPlayerIndex = -1;
+            }
         }
 
-        this.logGameState();
+        this.logDetailedState();
         return true;
     }
 
     runOutBoard() {
-        // Deal remaining community cards without betting
-        const cardsNeeded = 5 - this.communityCards.length;
+        console.log("🎰 Running out the board (all players all-in)...");
         
-        for (let i = 0; i < cardsNeeded; i++) {
-            this.nextBettingRound(); // This deals the cards
-            if (!this.handInProgress) break; // Showdown was called
+        // Deal remaining community cards without betting
+        while (this.communityCards.length < 5) {
+            const len = this.communityCards.length;
+            
+            if (len === 0) {
+                this.stage = 'flop';
+                this.communityCards.push(this.deck.deal(), this.deck.deal(), this.deck.deal());
+                console.log(`🃏 Flop: ${this.communityCards.map(c => c.toString()).join(', ')}`);
+            }
+            else if (len === 3) {
+                this.stage = 'turn';
+                this.communityCards.push(this.deck.deal());
+                console.log(`🃏 Turn: ${this.communityCards[3].toString()}`);
+            }
+            else if (len === 4) {
+                this.stage = 'river';
+                this.communityCards.push(this.deck.deal());
+                console.log(`🃏 River: ${this.communityCards[4].toString()}`);
+            }
         }
         
         console.log(`🃏 Final board: ${this.communityCards.map(c => c.toString()).join(', ')}`);
+        
+        // Now go to showdown
+        this.resolveShowdown();
     }
 
-    // Add this helper method
     isBettingRoundComplete() {
         const activePlayers = this.players.filter(p => 
             p.state === PlayerState.IN_GAME && !p.isAllIn
         );
         
-        // If no active players left (all folded or all-in), round is complete
-        if (activePlayers.length === 0) {
-            console.log("⚠️ No active players left");
-            return true;
-        }
-        
-        // Check if all active players have acted
-        const allActed = activePlayers.every(p => p.actedThisRound);
-        if (!allActed) {
-            return false;
-        }
-        
-        // Check if all active players have matching bets
-        const allBetsEqual = activePlayers.every(p => p.currentBet === this.currentBet);
-        
-        console.log(`Betting check: allActed=${allActed}, allBetsEqual=${allBetsEqual}, currentBet=${this.currentBet}`);
-        
-        return allBetsEqual;
-    }
-
-    // Add this helper method
-    isBettingRoundComplete() {
-        const activePlayers = this.players.filter(p => 
-            p.state === PlayerState.IN_GAME && !p.isAllIn
+        // Also get all-in players for complete picture
+        const allInPlayers = this.players.filter(p => 
+            p.state === PlayerState.IN_GAME && p.isAllIn
         );
         
         // If no active players left (all folded or all-in), round is complete
@@ -283,28 +372,19 @@ class Table {
             return true;
         }
         
-        // If only one active player and all others are folded/all-in, hand is over
-        // (this check should happen in isHandOver, but let's be safe)
-        if (activePlayers.length === 1) {
-            const nonFoldedPlayers = this.players.filter(p => 
-                p.state === PlayerState.IN_GAME || p.isAllIn
-            );
-            if (nonFoldedPlayers.length === 1) {
-                console.log("⚠️ Only one player left, hand should end");
-                return true;
-            }
-        }
-        
         // Check if all active players have acted
         const allActed = activePlayers.every(p => p.actedThisRound);
         if (!allActed) {
+            console.log(`⏳ Not all players acted yet`);
             return false;
         }
         
         // Check if all active players have matching bets
+        // Note: all-in players don't need to match if they're already all-in
         const allBetsEqual = activePlayers.every(p => p.currentBet === this.currentBet);
         
-        console.log(`Betting check: allActed=${allActed}, allBetsEqual=${allBetsEqual}, currentBet=${this.currentBet}`);
+        const allPlayersForLog = [...activePlayers, ...allInPlayers];
+        console.log(`Betting check: allActed=${allActed}, allBetsEqual=${allBetsEqual}, currentBet=${this.currentBet}, activePlayers=${activePlayers.map(p => `${p.name}:${p.currentBet}`).join(',')}, allIn=${allInPlayers.map(p => `${p.name}:${p.currentBet}`).join(',')}`);
         
         return allBetsEqual;
     }
@@ -402,6 +482,10 @@ class Table {
         console.log("🎉 Hand ended! Final stacks:");
         this.players.forEach(p => {
             console.log(`  ${p.name}: ${p.stack} chips`);
+            if (p.stack === 0) {
+            console.log(`  ⚠️ ${p.name} is out of chips!`);
+            p.state = PlayerState.LEFT;
+        }
         });
         this.handInProgress = false;
         this.currentPlayerIndex = -1;

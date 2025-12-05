@@ -60,19 +60,10 @@ function createBot(name, seatIndex) {
   });
 
   socket.on("state", (state) => {
-    const stateSignature = JSON.stringify({
-      currentPlayer: state.currentPlayer,
-      currentBet: state.currentBet,
-      stage: state.stage,
-      communityCards: state.communityCards,
-      playerStates: state.players.map(p => ({ 
-        name: p.name, 
-        state: p.state, 
-        currentBet: p.currentBet,
-        stack: p.stack 
-      }))
-    });
+    // Create a simpler state signature focused on what matters for detecting turn
+    const stateSignature = `${state.currentPlayer}-${state.currentBet}-${state.stage}`;
 
+    // Skip if this is the exact same state we just processed
     if (bot.lastSeenState === stateSignature) {
       return;
     }
@@ -83,24 +74,23 @@ function createBot(name, seatIndex) {
 
     // Check if hand ended and we should start a new one
     if (state.currentPlayer === -1 && state.stage !== 'waiting' && state.handInProgress === false) {
-      // Hand is over, wait a bit then start new hand
-      if (name === 'Bot1') { // Let Bot1 be responsible for starting
+      if (name === 'Bot1') {
         setTimeout(() => {
           console.log(`[${name}] Starting new hand...`);
           socket.emit("start-hand");
-        }, 2000); // 2 second delay between hands
+        }, 2000);
       }
       return;
     }
 
-    if (Math.random() < 0.1) {
-      console.log(`[${name}] state received. currentPlayer=${state.currentPlayer}, stage=${state.stage}`);
-    }
-
+    // Log when it's our turn
     if (myIndex !== -1 && state.currentPlayer === myIndex) {
+      console.log(`[${name}] My turn! currentPlayer=${state.currentPlayer}, stage=${state.stage}, currentBet=${state.currentBet}`);
+      
       const myPlayer = players[myIndex];
       
       if (myPlayer.state !== 'IN_GAME') {
+        console.log(`[${name}] Cannot act - state is ${myPlayer.state}`);
         return;
       }
 
