@@ -63,8 +63,21 @@ io.on("connection", (socket) => {
   socket.on("start-hand", () => {
     const ok = table.startHand();
     if (!ok) {
-      socket.emit("error", "Not enough players");
-      return;
+        // Check if game is over
+        const playersWithChips = table.players.filter(p => 
+            p.state !== 'LEFT' && p.stack > 0
+        );
+        
+        if (playersWithChips.length === 1) {
+            io.emit("game-over", {
+                winner: playersWithChips[0].name,
+                chips: playersWithChips[0].stack
+            });
+            console.log("🎊🎊🎊 TOURNAMENT COMPLETE 🎊🎊🎊");
+        } else {
+            socket.emit("error", "Not enough players");
+        }
+        return;
     }
 
     table.broadcast(io);

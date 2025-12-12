@@ -12,10 +12,11 @@ const AUTO_START_DELAY_MS = 1200; // after everyone joined, wait then start
 
 // simple bot policy weights
 const ACTION_WEIGHTS = [
-  { name: "CALL", weight: 60 },
+  { name: "CALL", weight: 50 }, // Lower call weight slightly
   { name: "BET",  weight: 20 },
   { name: "FOLD", weight: 15 },
-  { name: "ALL_IN", weight: 5 }
+  { name: "ALL_IN", weight: 5 },
+  { name: "CHECK", weight: 10 } // Add CHECK option
 ];
 
 /**
@@ -60,15 +61,6 @@ function createBot(name, seatIndex) {
   });
 
   socket.on("state", (state) => {
-    // Create a simpler state signature focused on what matters for detecting turn
-    const stateSignature = `${state.currentPlayer}-${state.currentBet}-${state.stage}`;
-
-    // Skip if this is the exact same state we just processed
-    if (bot.lastSeenState === stateSignature) {
-      return;
-    }
-    bot.lastSeenState = stateSignature;
-
     const players = state.players || [];
     const myIndex = players.findIndex(p => p.name === name);
 
@@ -83,45 +75,124 @@ function createBot(name, seatIndex) {
       return;
     }
 
-    // Log when it's our turn
+    // If it's my turn, ALWAYS act (don't deduplicate)
     if (myIndex !== -1 && state.currentPlayer === myIndex) {
-      console.log(`[${name}] My turn! currentPlayer=${state.currentPlayer}, stage=${state.stage}, currentBet=${state.currentBet}`);
-      
       const myPlayer = players[myIndex];
       
-      if (myPlayer.state !== 'IN_GAME') {
-        console.log(`[${name}] Cannot act - state is ${myPlayer.state}`);
-        return;
-      }
+      // // Create a detailed signature that includes MY current state
+      // const stateSignature = `${state.currentPlayer}-${state.currentBet}-${state.stage}-${myPlayer.currentBet}-${myPlayer.stack}`;
+      
+      // // Only skip if EVERYTHING is identical (including my bet and stack)
+      // if (bot.lastSeenState === stateSignature) {
+      //   console.log(`[${name}] Skipping duplicate state (already acted)`);
+      //   return;
+      // }
+      // bot.lastSeenState = stateSignature;
 
+      console.log(`[${name}] My turn! currentPlayer=${state.currentPlayer}, stage=${state.stage}, currentBet=${state.currentBet}, myBet=${myPlayer.currentBet}`);
+
+      // INSIDE simulator.js, in socket.on("state") - Replace the existing action logic
+
+      const requiredToCall = state.currentBet - myPlayer.currentBet;
+      const myStack = myPlayer.stack;
       const chosen = pickWeightedAction();
 
-      switch (chosen) {
-        case "CALL":
-          console.log(`[${name}] -> CALL`);
-          socket.emit("action", { name, action: "CALL", amount: 0 });
-          break;
+      const isCheckingRound = requiredToCall === 0;
 
-        case "BET":
-          const currentBet = state.currentBet || 0;
-          const betAmount = Math.max(10, Math.floor(currentBet + 10));
-          console.log(`[${name}] -> BET ${betAmount}`);
-          socket.emit("action", { name, action: "BET", amount: betAmount });
-          break;
+      const actionIsAggressive = (chosen === "BET" || chosen === "RAISE" || chosen === "ALL_IN");
 
-        case "FOLD":
-          console.log(`[${name}] -> FOLD`);
-          socket.emit("action", { name, action: "FOLD", amount: 0 });
-          break;
+      if (myPlayer.state !== 'IN_GAME' || myStack === 0) {
+          // Failsafe for players who cannot act.
+          socket.emit("action", { name, action: "CALL", amount: 0 }); 
+          return;
+      }
 
-        case "ALL_IN":
-          console.log(`[${name}] -> ALL_IN`);
-          socket.emit("action", { name, action: "ALL_IN", amount: 0 });
-          break;
+      if (isCheckingRound) {
+          if (actionIsAggressive) {
+              // Fall through to the aggressive logic below (by doing nothing here)
+          } else if (chosen === "FOLD") {
+              console.log(`[${name}] -> FOLD`);
+              socket.emit("action", { name, action: "FOLD", amount: 0 });
+              return; // Exit after action
+          } else { // CHECK/CALL
+              console.log(`[${name}] -> CHECK`);
+              socket.emit("action", { name, action: "CHECK", amount: 0 });
+              return; // Exit after action
+          }
+      } else {
+          // If a bet exists (requiredToCall > 0)
+          if (chosen === "FOLD") {
+              console.log(`[${name}] -> FOLD`);
+              socket.emit("action", { name, action: "FOLD", amount: 0 });
+              return; // Exit after action
+          } else if (myStack <= requiredToCall || chosen === "CALL" || chosen === "CHECK") {
+              // Force ALL_IN if low stack, otherwise CALL
+              if (myStack <= requiredToCall && myStack > 0) {
+                  console.log(`[${name}] -> STACK LOW, FORCING ALL_IN (${myStack})`);
+                  socket.emit("action", { name, action: "ALL_IN", amount: 0 });
+              } else {
+                  console.log(`[${name}] -> CALL`);
+                  socket.emit("action", { name, action: "CALL", amount: 0 });
+              }
+              return; // Exit after action
+          }
+          // If chosen is AGGRESSIVE, fall through to the aggressive block below
+      }
 
-        default:
-          console.log(`[${name}] -> default CALL`);
-          socket.emit("action", { name, action: "CALL", amount: 0 });
+
+      // --- AGGRESSIVE ACTION BLOCK (Handles both checking-round bets and betting-round raises) ---
+      if (actionIsAggressive) {
+
+          const minRaiseSize = state.minRaiseAmount || state.bigBlind || 10; 
+          const amountForMinRaiseTotalBet = requiredToCall + minRaiseSize + myPlayer.currentBet;
+          
+          let targetTotalBet = 0; // The total bet the player will have after the action
+
+          if (chosen === "ALL_IN") {
+              targetTotalBet = myPlayer.currentBet + myStack; // Max possible bet
+          } else { // BET/RAISE
+              // Target a bet amount between min raise total and half stack total, capped at stack total
+              
+              // We want to raise by some amount X such that X >= minRaiseSize.
+              // Target Total Bet = Current Table Bet + minRaiseSize + (Some random extra amount)
+              
+              // Simple: just target the minimum legal total bet
+              targetTotalBet = amountForMinRaiseTotalBet;
+              
+              // If you want it random:
+              const maxTargetTotalBet = myPlayer.currentBet + myStack;
+              // Ensure targetTotalBet is at least amountForMinRaiseTotalBet (500)
+              targetTotalBet = Math.min(maxTargetTotalBet, Math.max(amountForMinRaiseTotalBet, Math.floor(maxTargetTotalBet / 2)));
+          }
+
+          // The amount to send to the server is the *additional contribution* needed to reach the targetTotalBet
+          const amountToContribute = targetTotalBet - myPlayer.currentBet;
+          
+          // The amount must not exceed the player's stack
+          const finalAmount = Math.min(amountToContribute, myStack);
+
+
+          // Final Check and Emit
+          if (finalAmount > requiredToCall && finalAmount < myStack) {
+              // This is a raise that is NOT all-in.
+              console.log(`[${name}] -> RAISE (TargetTotal: ${targetTotalBet}, Contribution: ${finalAmount})`);
+              // Use "BET" for both Bet and Raise, as per your server logic
+              socket.emit("action", { name, action: "BET", amount: finalAmount }); 
+          } else if (finalAmount === myStack && myStack > 0) {
+              // ALL-IN
+              console.log(`[${name}] -> ALL_IN (Contribution: ${finalAmount})`);
+              socket.emit("action", { name, action: "ALL_IN", amount: 0 }); // Use ALL_IN action, amount is ignored by server
+          } else {
+              // If the calculated amount wasn't a raise (e.g., if finalAmount <= requiredToCall), revert to CALL/CHECK
+              if (requiredToCall > 0) {
+                  console.log(`[${name}] -> Calculated action illegal/insufficient, defaulting to CALL`);
+                  socket.emit("action", { name, action: "CALL", amount: 0 });
+              } else {
+                  console.log(`[${name}] -> Calculated action illegal/insufficient, defaulting to CHECK`);
+                  socket.emit("action", { name, action: "CHECK", amount: 0 });
+              }
+          }
+          return; // Exit after action
       }
     }
   });
@@ -137,6 +208,18 @@ function createBot(name, seatIndex) {
   socket.on("disconnect", (reason) => {
     console.log(`[${name}] disconnected: ${reason}`);
     bot.connected = false;
+  });
+
+  socket.on("game-over", (data) => {
+    console.log(`\n${"=".repeat(60)}`);
+    console.log(`🎊🎊🎊 GAME OVER 🎊🎊🎊`);
+    console.log(`🏆 Winner: ${data.winner} with ${data.chips} chips!`);
+    console.log(`${"=".repeat(60)}\n`);
+    
+    // Disconnect after game over
+    setTimeout(() => {
+        socket.disconnect();
+    }, 2000);
   });
 
   bots.push(bot);

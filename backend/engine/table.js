@@ -11,18 +11,43 @@ class Table {
         this.deck = deck ?? new Deck();
         this.pot = [new Pot()];
         this.communityCards = [];
-        this.buttonIndex = 0;
+        
+        // FIX 1: Initialize to -1 so the first increment sets it to 0 (P1)
+        this.buttonIndex = -1; 
+        
         this.currentBet = 0;
         this.currentPlayerIndex = 0;
         this.handInProgress = false;
         this.smallBlind = smallBlind;
         this.bigBlind = bigBlind;
+        this.minRaiseAmount = this.bigBlind;
+        this.lastAggressorIndex = -1;
     }
 
     startHand() {
-        if (this.players.length < 2) return false;
+        // Check if enough players have chips to play
+        const playersWithChips = this.players.filter(p => 
+            p.state !== PlayerState.LEFT && p.stack > 0
+        );
+        
+        if (playersWithChips.length < 2) {
+            console.log("🏆 GAME OVER - Not enough players with chips to continue");
+            if (playersWithChips.length === 1) {
+                console.log(`🎊 ${playersWithChips[0].name} wins the game with ${playersWithChips[0].stack} chips!`);
+            }
+            this.handInProgress = false;
+            return false;
+        }
 
+        // Move button
         this.buttonIndex = (this.buttonIndex + 1) % this.players.length;
+        
+        // Skip players with no chips for button position
+        let attempts = 0;
+        while (this.players[this.buttonIndex].stack === 0 && attempts < this.players.length) {
+            this.buttonIndex = (this.buttonIndex + 1) % this.players.length;
+            attempts++;
+        }
 
         if (this.deck && typeof this.deck.reset === "function") this.deck.reset();
         if (this.deck && typeof this.deck.shuffle === "function") this.deck.shuffle();
@@ -30,8 +55,9 @@ class Table {
         this.communityCards = [];
         this.pot = [new Pot()];
         this.handInProgress = true;
-        this.currentBet = this.bigBlind; // Start with big blind as current bet
+        this.currentBet = this.bigBlind;
         this.stage = 'preflop';
+        this.minRaiseAmount = this.bigBlind;
 
         for (const p of this.players) {
             p.resetForNewHand();
@@ -40,47 +66,92 @@ class Table {
             }
         }
 
-        // Post blinds
-        const sbIndex = (this.buttonIndex + 1) % this.players.length;
-        const bbIndex = (this.buttonIndex + 2) % this.players.length;
-        
-        const sbPlayer = this.players[sbIndex];
-        const bbPlayer = this.players[bbIndex];
-        
-        if (sbPlayer && sbPlayer.state === PlayerState.IN_GAME) {
-            const sbAmount = Math.min(this.smallBlind, sbPlayer.stack);
-            sbPlayer.bet(sbAmount);
-            this.pot[0].addContribution(sbPlayer.name, sbAmount);
-            console.log(`🎲 ${sbPlayer.name} posts small blind: ${sbAmount}`);
-        }
-        
-        if (bbPlayer && bbPlayer.state === PlayerState.IN_GAME) {
-            const bbAmount = Math.min(this.bigBlind, bbPlayer.stack);
-            bbPlayer.bet(bbAmount);
-            this.pot[0].addContribution(bbPlayer.name, bbAmount);
-            console.log(`🎲 ${bbPlayer.name} posts big blind: ${bbAmount}`);
-        }
-
-        // Deal cards
-        for (let i = 0; i < 2; i++) {
-            for (const p of this.players) {
-                if (p.state === PlayerState.IN_GAME) {
-                    p.addCards([this.deck.deal()]);
+        // HEADS-UP SPECIAL CASE: Only 2 players with chips
+        if (playersWithChips.length === 2) {
+            console.log("👥 Heads-up! Button posts small blind, other player posts big blind");
+            
+            const buttonPlayer = this.players[this.buttonIndex];
+            const otherPlayerIndex = this.players.findIndex((p, i) => 
+                i !== this.buttonIndex && p.state === PlayerState.IN_GAME && p.stack > 0
+            );
+            const otherPlayer = this.players[otherPlayerIndex];
+            
+            // Button posts small blind
+            if (buttonPlayer && buttonPlayer.stack > 0) {
+                const sbAmount = Math.min(this.smallBlind, buttonPlayer.stack);
+                buttonPlayer.bet(sbAmount);
+                // FIX 2a: Check if blind put player all-in
+                if (buttonPlayer.stack === 0) buttonPlayer.isAllIn = true; 
+                console.log(`🎲 ${buttonPlayer.name} (button) posts small blind: ${sbAmount}`);
+            }
+            
+            // Other player posts big blind
+            if (otherPlayer && otherPlayer.stack > 0) {
+                const bbAmount = Math.min(this.bigBlind, otherPlayer.stack);
+                otherPlayer.bet(bbAmount);
+                // FIX 2b: Check if blind put player all-in
+                if (otherPlayer.stack === 0) otherPlayer.isAllIn = true;
+                console.log(`🎲 ${otherPlayer.name} posts big blind: ${bbAmount}`);
+            }
+            
+            for (let i = 0; i < 2; i++) {
+                for (const p of this.players) {
+                    if (p.state === PlayerState.IN_GAME) {
+                        p.addCards([this.deck.deal()]);
+                    }
                 }
             }
+            
+            this.currentPlayerIndex = this.buttonIndex;
+            console.log(`🎯 Heads-up: Button (${buttonPlayer.name}) acts first`);
+            
+        } else {
+            // NORMAL MULTI-WAY: Standard blind positions
+            const sbIndex = (this.buttonIndex + 1) % this.players.length;
+            const bbIndex = (this.buttonIndex + 2) % this.players.length;
+            
+            const sbPlayer = this.players[sbIndex];
+            const bbPlayer = this.players[bbIndex];
+            
+            if (sbPlayer && sbPlayer.state === PlayerState.IN_GAME && sbPlayer.stack > 0) {
+                const sbAmount = Math.min(this.smallBlind, sbPlayer.stack);
+                sbPlayer.bet(sbAmount);
+                // FIX 2c: Check if blind put player all-in
+                if (sbPlayer.stack === 0) sbPlayer.isAllIn = true;
+                console.log(`🎲 ${sbPlayer.name} posts small blind: ${sbAmount}`);
+            }
+            
+            if (bbPlayer && bbPlayer.state === PlayerState.IN_GAME && bbPlayer.stack > 0) {
+                const bbAmount = Math.min(this.bigBlind, bbPlayer.stack);
+                bbPlayer.bet(bbAmount);
+                // FIX 2d: Check if blind put player all-in
+                if (bbPlayer.stack === 0) bbPlayer.isAllIn = true;
+                console.log(`🎲 ${bbPlayer.name} posts big blind: ${bbAmount}`);
+            }
+            
+            for (let i = 0; i < 2; i++) {
+                for (const p of this.players) {
+                    if (p.state === PlayerState.IN_GAME) {
+                        p.addCards([this.deck.deal()]);
+                    }
+                }
+            }
+            
+            this.currentPlayerIndex = this.getNextActivePlayer(bbIndex);
+            console.log(`🎯 Action starts with ${this.players[this.currentPlayerIndex]?.name}`);
         }
-
-        // First to act is after big blind
-        this.currentPlayerIndex = this.getNextActivePlayer(bbIndex);
-        console.log(`🎯 Action starts with ${this.players[this.currentPlayerIndex]?.name}`);
+        
+        if (this.currentPlayerIndex === -1) {
+            console.log("⚠️ No active player to start - ending hand");
+            this.resolveShowdown();
+            return false;
+        }
         
         return true;
     }
 
     addPlayer(player) {
-        if (this.players.length >= this.maxPlayers) {
-            return false;
-        }
+        if (this.players.length >= this.maxPlayers) return false;
         this.players.push(player);
         return true;
     }
@@ -90,10 +161,7 @@ class Table {
     }
 
     getActivePlayers() {
-        return this.players.filter(
-            p => 
-                p.state === PlayerState.IN_GAME ||
-                p.state === PlayerState.READY        );
+        return this.players.filter(p => p.state === PlayerState.IN_GAME || p.state === PlayerState.READY);
     }
 
     getPlayerSeat(seatIndex) {
@@ -105,44 +173,33 @@ class Table {
         for (let i = 1; i <= n; i++) {
             const index = (startIndex + i) % n;
             const p = this.players[index];
-            
-            // Player must be IN_GAME, have chips, and not be all-in
             if (p.state === PlayerState.IN_GAME && p.stack > 0 && !p.isAllIn) {
+                console.log(`[SEARCH] Found Next Active: ${p.name}`);
                 return index;
             }
         }
-        return -1; // no active players
+        return -1;
     }
-
-
 
     nextBettingRound() {
         const len = this.communityCards.length;
-        
         if (len === 0) {
-            // Preflop -> Flop
             this.stage = 'flop';
             this.communityCards.push(this.deck.deal(), this.deck.deal(), this.deck.deal());
             console.log(`🃏 Flop dealt: ${this.communityCards.map(c => c.toString()).join(', ')}`);
-        }
-        else if (len === 3) {
-            // Flop -> Turn
+        } else if (len === 3) {
             this.stage = 'turn';
             this.communityCards.push(this.deck.deal());
             console.log(`🃏 Turn dealt: ${this.communityCards[3].toString()}`);
-        }
-        else if (len === 4) {
-            // Turn -> River
+        } else if (len === 4) {
             this.stage = 'river';
             this.communityCards.push(this.deck.deal());
             console.log(`🃏 River dealt: ${this.communityCards[4].toString()}`);
-        } 
-        else {
-            // River is complete, go to showdown
+        } else {
             console.log("🏁 All betting rounds complete - going to showdown");
             this.resolveShowdown();
-            this.currentPlayerIndex = -1; // Stop further actions
-            return; // Important: don't continue
+            this.currentPlayerIndex = -1;
+            return;
         }
     }
 
@@ -159,32 +216,71 @@ class Table {
     }
 
     playerAction(name, action, amount = 0) {
+        const act = String(action).toUpperCase();
         const player = this.players.find(p => p.name === name);
-        if (!player) {
-            console.log(`❌ Player ${name} not found`);
-            return false;
-        }
+        if (!player) { console.log(`❌ Player ${name} not found`); return false; }
 
         const playerIndex = this.players.findIndex(p => p.name === name);
-        if (playerIndex !== this.currentPlayerIndex) {
-            console.log(`❌ ${name} tried to act but it's not their turn (current: ${this.currentPlayerIndex})`);
-            return false;
-        }
+        if (playerIndex !== this.currentPlayerIndex) { console.log(`❌ ${name} tried to act but it's not their turn`); return false; }
+        if (player.state !== PlayerState.IN_GAME) { console.log(`❌ ${name} cannot act`); return false; }
 
-        if (player.state !== PlayerState.IN_GAME) {
-            console.log(`❌ ${name} cannot act - state is ${player.state}`);
-            return false;
-        }
+        console.log(`[ACTION] ${name} attempts ${act} ${amount}. Stack: ${player.stack}`);
 
-        const act = String(action).toUpperCase();
-
-        // Apply action
         switch (act) {
             case "BET":
-                if (player.bet(amount)) {
-                    this.currentBet = Math.max(this.currentBet, player.currentBet);
-                    this.pot[0].addContribution(name, amount);
+            case "RAISE":
+                // FIX: Interpret 'amount' as the "Target Total Bet" (Raise TO X), not "Add X"
+                const targetTotalBet = amount;
+                const amountToContribute = targetTotalBet - player.currentBet;
+                
+                // Sanity check: You can't bet less than you already have in the pot
+                if (amountToContribute < 0) {
+                     throw new Error(`Invalid bet: Cannot reduce bet from ${player.currentBet} to ${targetTotalBet}`);
+                }
+
+                const playerTotalBetIfActioned = targetTotalBet;
+                const amountNeededToCall = this.currentBet - player.currentBet;
+                
+                // 1. Pre-validation: Ensure it's not an illegal under-call
+                // We compare the *contribution* against what is needed
+                if (amountNeededToCall > 0 && amountToContribute < amountNeededToCall && amountToContribute < player.stack) {
+                    throw new Error(`Invalid bet: Must call ${amountNeededToCall} (Total: ${this.currentBet}) or go all-in.`);
+                }
+
+                // 2. Check for Illegal Under-Raise
+                if (playerTotalBetIfActioned > this.currentBet) {
+                    const raiseSize = playerTotalBetIfActioned - this.currentBet;
+                    
+                    if (raiseSize < this.minRaiseAmount && amountToContribute < player.stack) {
+                        // Illegal under-raise and not all-in
+                        throw new Error(`Invalid raise: Must be at least ${this.minRaiseAmount} (Total: ${this.currentBet + this.minRaiseAmount}).`);
+                    }
+                }
+
+                // 3. Process the action
+                if (player.bet(amountToContribute)) { // Player.js .bet() handles the stack deduction
+
+                    const previousTotalBet = this.currentBet;
+                    const playerNewTotalBet = player.currentBet; // Should now equal targetTotalBet
+
+                    this.currentBet = Math.max(previousTotalBet, playerNewTotalBet);
                     player.actedThisRound = true;
+
+                    if (playerNewTotalBet > previousTotalBet) {
+                        // It was a raise
+                        const raiseSize = playerNewTotalBet - previousTotalBet;
+                        this.minRaiseAmount = raiseSize; 
+                        
+                        console.log(`🔥 ${name} raises to ${playerNewTotalBet}!`);
+                        
+                        for (const p of this.players) {
+                            if (p.name !== name && p.state === PlayerState.IN_GAME && !p.isAllIn) {
+                                p.actedThisRound = false;
+                            }
+                        }
+                    } else {
+                        console.log(`👍 ${name} calls/checks.`);
+                    }
                 } else {
                     return false;
                 }
@@ -193,22 +289,24 @@ class Table {
             case "CALL": {
                 const callAmount = Math.max(0, this.currentBet - player.currentBet);
                 if (callAmount > 0) {
-                    // If player can't afford full call, go all-in with what they have
                     const actualAmount = Math.min(callAmount, player.stack);
                     if (actualAmount > 0) {
-                        player.bet(actualAmount);
-                        this.pot[0].addContribution(name, actualAmount);
-                        
-                        // If they bet everything, mark as all-in
+                        player.bet(actualAmount);                        
                         if (player.stack === 0) {
                             player.isAllIn = true;
-                            console.log(`💰 ${name} calls all-in for ${actualAmount} (needed ${callAmount})`);
+                            console.log(`💰 ${name} calls all-in for ${actualAmount}`);
                         }
                     }
                 }
                 player.actedThisRound = true;
                 break;
             }
+
+            case "CHECK":
+                if (this.currentBet !== player.currentBet) throw new Error(`${player.name} cannot check when there is a bet`);
+                console.log(`👍 ${name} checks.`);
+                player.actedThisRound = true;
+                break;
 
             case "FOLD":
                 player.fold();
@@ -217,21 +315,28 @@ class Table {
 
             case "ALL_IN":
                 const allInAmount = player.stack;
+                const previousBet = this.currentBet;
                 player.allIn();
                 if (allInAmount > 0) {
-                    this.pot[0].addContribution(name, allInAmount);
                     this.currentBet = Math.max(this.currentBet, player.currentBet);
+                    if (player.currentBet > previousBet) {
+                        console.log(`🔥 ${name} raises all-in!`);
+                        for (const p of this.players) {
+                            if (p.name !== name && p.state === PlayerState.IN_GAME && !p.isAllIn) {
+                                p.actedThisRound = false;
+                            }
+                        }
+                    }
                 }
                 player.actedThisRound = true;
                 break;
 
-            default:
-                return false;
+            default: return false;
         }
 
-        // Check if hand is over (only one player left)
         if (this.isHandOver()) {
             console.log("🏁 Hand is over - resolving showdown");
+            this.collectAndCreateSidePots();
             this.resolveShowdown();
             this.handInProgress = false;
             this.currentPlayerIndex = -1;
@@ -239,48 +344,32 @@ class Table {
             return true;
         }
 
-        // Check if betting round is complete
         if (this.isBettingRoundComplete()) {
             console.log("✅ Betting round complete - moving to next round");
-            
-            // Reset for next round
+            this.collectAndCreateSidePots();
+
             for (const p of this.players) {
                 p.actedThisRound = false;
-                if (p.state === PlayerState.IN_GAME) {
-                    p.currentBet = 0;
-                }
+                if (p.state === PlayerState.IN_GAME) p.currentBet = 0;
             }
             this.currentBet = 0;
+            this.minRaiseAmount = this.bigBlind;
             
-            // Check if all remaining players are all-in (no one can act)
-            const activePlayers = this.players.filter(p => 
-                (p.state === PlayerState.IN_GAME || p.isAllIn)
-            );
-            const canActPlayers = this.players.filter(p => 
-                p.state === PlayerState.IN_GAME && !p.isAllIn && p.stack > 0
-            );
+            const activePlayers = this.players.filter(p => (p.state === PlayerState.IN_GAME || p.isAllIn));
+            const canActPlayers = this.players.filter(p => p.state === PlayerState.IN_GAME && !p.isAllIn && p.stack > 0);
             
-            if (canActPlayers.length === 0 && activePlayers.length > 1) {
-                // Everyone is all-in or folded, run out the board
-                console.log("🎰 All remaining players all-in - running out the board");
+            if (canActPlayers.length <= 1 && activePlayers.length > 1) {
+                console.log("🎰 One active player vs All-Ins - running out the board");
                 this.runOutBoard();
                 return true;
             }
             
-            // Move to next betting round
             this.nextBettingRound();
+            if (!this.handInProgress) return true;
             
-            // Check if hand ended
-            if (!this.handInProgress) {
-                console.log("🏁 Hand completed via showdown");
-                return true;
-            }
-            
-            // Set first player for new betting round
             this.currentPlayerIndex = this.getNextActivePlayer(this.buttonIndex);
             console.log(`🎯 New round - first to act: ${this.currentPlayerIndex}`);
             
-            // Safety check
             if (this.currentPlayerIndex === -1) {
                 console.log("⚠️ No active player found for new round - ending hand");
                 this.resolveShowdown();
@@ -288,34 +377,15 @@ class Table {
                 return true;
             }
         } else {
-            // Betting round not complete - advance to next active player
             const nextIndex = this.getNextActivePlayer(this.currentPlayerIndex);
-            
-            console.log(`🔄 Advancing from player ${this.currentPlayerIndex} (${this.players[this.currentPlayerIndex].name}) to ${nextIndex} (${nextIndex >= 0 ? this.players[nextIndex].name : 'NONE'})`);
-            
+            console.log(`🔄 Advancing to ${nextIndex}`);
             this.currentPlayerIndex = nextIndex;
             
-            // Safety check: if no valid next player found
             if (this.currentPlayerIndex === -1) {
-                console.log(`⚠️ No next active player found after ${name}'s action`);
-                
-                const canActPlayers = this.players.filter(p => 
-                    p.state === PlayerState.IN_GAME && !p.isAllIn && p.stack > 0
-                );
-                
-                console.log(`   Can act players: ${canActPlayers.map(p => p.name).join(', ')}`);
-                
-                if (canActPlayers.length === 0) {
-                    // No one can act - should have been caught by isBettingRoundComplete
-                    console.log(`⚠️ Forcing betting round to complete`);
-                    // Re-check betting round completion
-                    if (this.isBettingRoundComplete()) {
-                        // Trigger the completion logic by recursing
-                        return this.playerAction(name, "CHECK", 0);
-                    }
+                const canActPlayers = this.players.filter(p => p.state === PlayerState.IN_GAME && !p.isAllIn && p.stack > 0);
+                if (canActPlayers.length === 0 && this.isBettingRoundComplete()) {
+                    return this.playerAction(name, "CHECK", 0);
                 }
-                
-                // Hand is over
                 this.resolveShowdown();
                 this.handInProgress = false;
                 this.currentPlayerIndex = -1;
@@ -326,103 +396,139 @@ class Table {
         return true;
     }
 
-    runOutBoard() {
-        console.log("🎰 Running out the board (all players all-in)...");
+    collectAndCreateSidePots() {
+        console.log("💵 Collecting chips and creating side pots...");
+        let contributors = this.players.filter(p => p.currentBet > 0 && p.state !== PlayerState.LEFT)
+            .map(p => ({ name: p.name, contribution: p.currentBet, isAllIn: p.isAllIn, originalPlayer: p }));
         
-        // Deal remaining community cards without betting
-        while (this.communityCards.length < 5) {
-            const len = this.communityCards.length;
-            
-            if (len === 0) {
-                this.stage = 'flop';
-                this.communityCards.push(this.deck.deal(), this.deck.deal(), this.deck.deal());
-                console.log(`🃏 Flop: ${this.communityCards.map(c => c.toString()).join(', ')}`);
+        const totalStreetContribution = contributors.reduce((sum, p) => sum + p.contribution, 0);
+        if (totalStreetContribution === 0) return;
+
+        this.pot = this.pot.filter(p => p.total > 0);
+        let remainingContributions = contributors;
+
+        while (remainingContributions.length > 0) {
+            const currentCap = remainingContributions.reduce((min, p) => Math.min(min, p.contribution), Infinity);
+            if (currentCap === 0 || currentCap === Infinity) break;
+
+            const newPot = new Pot();
+            newPot.isSidePot = true;
+            const playersToKeep = [];
+
+            for (const playerContrib of remainingContributions) {
+                const contributionToThisPot = currentCap;
+                newPot.addContribution(playerContrib.name, contributionToThisPot);
+                playerContrib.contribution -= contributionToThisPot;
+                if (playerContrib.contribution > 0) playersToKeep.push(playerContrib);
             }
-            else if (len === 3) {
-                this.stage = 'turn';
-                this.communityCards.push(this.deck.deal());
-                console.log(`🃏 Turn: ${this.communityCards[3].toString()}`);
+
+            const contributorsInPot = newPot.getPlayers();
+            if (contributorsInPot.length === 1) {
+                const lonePlayerName = contributorsInPot[0];
+                const lonePlayerObj = this.players.find(p => p.name === lonePlayerName);
+                if (lonePlayerObj) {
+                    console.log(`↩️ Returning uncalled bet of ${newPot.total} to ${lonePlayerName}`);
+                    lonePlayerObj.stack += newPot.total;
+                }
+            } else {
+                console.log(`  Pot Segment added (Cap: ${currentCap}): Total ${newPot.total}`);
+                this.pot.push(newPot);
             }
-            else if (len === 4) {
-                this.stage = 'river';
-                this.communityCards.push(this.deck.deal());
-                console.log(`🃏 River: ${this.communityCards[4].toString()}`);
-            }
+            remainingContributions = playersToKeep;
         }
         
+        for (const p of this.players) p.resetBet();
+    }
+
+    runOutBoard() {
+        console.log("🎰 Running out the board...");
+        while (this.communityCards.length < 5) {
+            this.communityCards.push(this.deck.deal());
+        }
         console.log(`🃏 Final board: ${this.communityCards.map(c => c.toString()).join(', ')}`);
-        
-        // Now go to showdown
         this.resolveShowdown();
     }
 
     isBettingRoundComplete() {
-        const activePlayers = this.players.filter(p => 
-            p.state === PlayerState.IN_GAME && !p.isAllIn
-        );
+        const activePlayers = this.players.filter(p => p.state === PlayerState.IN_GAME && !p.isAllIn);
+        const allInPlayers = this.players.filter(p => p.state === PlayerState.IN_GAME && p.isAllIn);
         
-        // Also get all-in players for complete picture
-        const allInPlayers = this.players.filter(p => 
-            p.state === PlayerState.IN_GAME && p.isAllIn
-        );
+        if (activePlayers.length === 0) return true;
         
-        // If no active players left (all folded or all-in), round is complete
-        if (activePlayers.length === 0) {
-            console.log("⚠️ No active players left (all all-in or folded)");
-            return true;
-        }
-        
-        // Check if all active players have acted
         const allActed = activePlayers.every(p => p.actedThisRound);
-        if (!allActed) {
-            console.log(`⏳ Not all players acted yet`);
-            return false;
-        }
+        if (!allActed) return false;
         
-        // Check if all active players have matching bets
-        // Note: all-in players don't need to match if they're already all-in
-        const allBetsEqual = activePlayers.every(p => p.currentBet === this.currentBet);
-        
-        const allPlayersForLog = [...activePlayers, ...allInPlayers];
-        console.log(`Betting check: allActed=${allActed}, allBetsEqual=${allBetsEqual}, currentBet=${this.currentBet}, activePlayers=${activePlayers.map(p => `${p.name}:${p.currentBet}`).join(',')}, allIn=${allInPlayers.map(p => `${p.name}:${p.currentBet}`).join(',')}`);
-        
-        return allBetsEqual;
+        return activePlayers.every(p => p.currentBet === this.currentBet);
     }
 
-
     resolveShowdown() {
+        // Filter out players who folded or left
         const activePlayers = this.players.filter(
             p => p.state === PlayerState.IN_GAME || p.isAllIn
         );
         
-        console.log(`🎰 Showdown with ${activePlayers.length} players:`);
+        console.log(`🎰 Showdown with ${activePlayers.length} players`);
+        console.log(`  Community: ${this.communityCards.map(c => c.toString()).join(', ')}`);
+        
+        // Log hands for debugging
         activePlayers.forEach(p => {
             console.log(`  - ${p.name}: ${p.hand.map(c => c.toString()).join(', ')}`);
         });
-        console.log(`  Community: ${this.communityCards.map(c => c.toString()).join(', ')}`);
 
-        const result = Showdown.evaluate(activePlayers, this.communityCards, this.pot);
-        console.log(`💰 Winner(s):`);
-        result.winners.forEach(w => {
-            console.log(`  - ${w.name} wins ${result.payouts.find(p => p.name === w.name)?.amount || 0} chips`);
-        });    
+        // FIX: Evaluate each pot independently to ensure Side Pots always find a winner
+        // even if the global hand-strength winner isn't in them.
+        for (const pot of this.pot) {
+            if (pot.total === 0) continue;
+
+            // 1. Identify who is competing for THIS specific pot
+            const potContributorNames = pot.getPlayers();
+            const contestants = activePlayers.filter(p => 
+                potContributorNames.includes(p.name)
+            );
+
+            if (contestants.length === 0) {
+                console.log(`⚠️ Pot of ${pot.total} has no active contestants (all folded?).`);
+                continue;
+            }
+
+            // 2. Default Winner Logic (Walk) for this specific pot
+            // If only one player is left in this pot (everyone else folded), they win automatically
+            if (contestants.length === 1) {
+                const winner = contestants[0];
+                console.log(`🏆 Default Winner for Pot (${pot.total}): ${winner.name} (Others folded)`);
+                winner.stack += pot.total;
+                continue;
+            }
+
+            // 3. Evaluate ONLY these contestants for THIS pot
+            // We pass [pot] as an array because the library likely expects an array of pots
+            const result = Showdown.evaluate(contestants, this.communityCards, [pot]);
+            
+            // 4. Distribute Winnings for this pot
+            if (result.payouts) {
+                for (const payout of result.payouts) {
+                    const winner = this.players.find(p => p.name === payout.name);
+                    if (winner) {
+                        // The Showdown library might log "Distributing...", but we ensure stack update happens
+                        // If the library ALREADY updates stack (based on previous logs), 
+                        // we rely on it. If not, uncomment the line below.
+                        // Based on your logs: "P3 receives 300 chips (new stack: 300)" -> Library does update stack.
+                        
+                        console.log(`  => ${winner.name} takes ${payout.amount} from this pot.`);
+                    }
+                }
+            }
+        }
+
         this.endHand(); // Properly end the hand
-        return result;
     }
 
-
-
-
     snapshot() {
-        const SnapshotModule = require("./snapshot"); // ✅ reload mock reference
+        const SnapshotModule = require("./snapshot");
         return SnapshotModule.create(this);
     }
 
-
-    // inside Table.js
-    broadcast(io) {
-        io.emit("state", this.getState());
-    }
+    broadcast(io) { io.emit("state", this.getState()); }
 
     getState() {
         return {
@@ -436,6 +542,7 @@ class Table {
                 currentBet: p.currentBet,
                 socketId: p.socketId || null,
                 isAllIn: p.isAllIn || false,
+                actedThisRound: p.actedThisRound
             })),
             communityCards: [...this.communityCards],
             pot: this.pot.map(p => ({ 
@@ -443,13 +550,15 @@ class Table {
                 contributions: p.contributions ? Object.fromEntries(p.contributions) : {} 
             })),
             currentBet: this.currentBet,
+            minRaiseAmount: this.minRaiseAmount,
             currentPlayer: typeof this.currentPlayerIndex === 'number' ? this.currentPlayerIndex : -1,
             buttonIndex: this.buttonIndex,
             stage: this.stage || 'waiting',
             handInProgress: this.handInProgress,
+            bigBlind: this.bigBlind,
+            smallBlind: this.smallBlind
         };
     }
-
 
     removePlayerBySocketId(id) {
         const index = this.players.findIndex(p => p.socketId === id);
@@ -457,11 +566,7 @@ class Table {
     }
 
     isHandOver() {
-        const nonFoldedPlayers = this.players.filter(p => 
-            p.state === PlayerState.IN_GAME || p.isAllIn
-        );
-        
-        // Hand is over if only 0 or 1 players remain (including all-in players)
+        const nonFoldedPlayers = this.players.filter(p => p.state === PlayerState.IN_GAME || p.isAllIn);
         return nonFoldedPlayers.length <= 1;
     }
 
@@ -472,9 +577,7 @@ class Table {
         this.handInProgress = false;
         for (const p of this.players) {
             p.resetBet();
-            if (p.state !== PlayerState.LEFT) {
-                p.state = PlayerState.READY;
-            }
+            if (p.state !== PlayerState.LEFT) p.state = PlayerState.READY;
         }
     }
 
@@ -483,20 +586,17 @@ class Table {
         this.players.forEach(p => {
             console.log(`  ${p.name}: ${p.stack} chips`);
             if (p.stack === 0) {
-            console.log(`  ⚠️ ${p.name} is out of chips!`);
-            p.state = PlayerState.LEFT;
-        }
+                console.log(`  ⚠️ ${p.name} is out of chips!`);
+                p.state = PlayerState.LEFT;
+            }
         });
         this.handInProgress = false;
         this.currentPlayerIndex = -1;
         this.communityCards = [];
         this.currentBet = 0;
         
-        // Reset all players for next hand
         for (const p of this.players) {
-            if (p.state === PlayerState.FOLDED) {
-                p.state = PlayerState.READY;
-            } else if (p.state === PlayerState.IN_GAME) {
+            if (p.state === PlayerState.FOLDED || p.state === PlayerState.IN_GAME) {
                 p.state = PlayerState.READY;
             }
             p.resetForNewHand();
@@ -504,10 +604,8 @@ class Table {
     }
 
     logGameState() {
-        const activePlayers = this.players
-            .filter(p => p.state === PlayerState.IN_GAME)
-            .map(p => `${p.name}(${p.state}, bet:${p.currentBet}, stack:${p.stack})`)
-            .join(', ');
+        const activePlayers = this.players.filter(p => p.state === PlayerState.IN_GAME)
+            .map(p => `${p.name}(${p.state}, bet:${p.currentBet})`).join(', ');
         console.log(`📊 Stage: ${this.stage}, CurrentBet: ${this.currentBet}, Active: [${activePlayers}]`);
     }
 }
