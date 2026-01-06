@@ -1,11 +1,11 @@
 "use strict";
 
 const PlayerState = {
-  READY: "READY", // 准备就绪
-  IN_GAME: "IN_GAME", // 在游戏中
-  FOLDED: "FOLDED", // 已弃牌
-  AWAY: "AWAY", // 离开座位
-  LEFT: "LEFT", // 已离开游戏
+  READY: "READY",
+  IN_GAME: "IN_GAME",
+  FOLDED: "FOLDED",
+  AWAY: "AWAY",
+  LEFT: "LEFT",
   OFFLINE: "OFFLINE",
 };
 
@@ -23,18 +23,20 @@ const HandRank = Object.freeze({
 });
 
 class Player {
-  constructor(seatIndex, name) {
+  constructor(seatIndex, name, socketId = null, isBot = false) {
     this.seatIndex = parseInt(seatIndex);
     this.name = name;
+    this.socketId = socketId;
     this.hand = [];
     this.stack = 0;
     this.currentBet = 0;
     this.state = PlayerState.READY;
     this.isAllIn = false;
     this.isButton = false;
-    this.handDesc = null; /*wait for showdonw logic*/
-    this.socketId = null; // store socket id when they join
-    this.actedThisRound = false; // optional: mark whether player acted in current betting round
+    this.handDesc = null; 
+    this.socketId = null;
+    this.actedThisRound = false;
+    this.isBot = isBot;
   }
 
   getSeat() {
@@ -66,7 +68,6 @@ class Player {
   }
 
   bet(amount) {
-    /*check if the chips enough*/
     if (amount <= 0 || amount > this.stack) {
       return false;
     }
@@ -96,7 +97,6 @@ class Player {
 
 
   addCards(cards) {
-    // 确保手牌不超过2张
     if (this.hand.length + cards.length <= 2) {
       this.hand.push(...cards);
     }
@@ -112,7 +112,6 @@ class Player {
   }
 
   Back() {
-    /*someone come back to the game*/
     this.state = PlayerState.READY;
   }
 
@@ -125,12 +124,10 @@ class Player {
   }
 
   setStack(NewStack) {
-    /*player set his/her chips*/
     this.stack = NewStack;
   }
 
   resetStage() {
-    /*after every showdown*/
     if (this.state === PlayerState.FOLDED || this.state === Player.READY) {
       this.state = PlayerState.IN_GAME;
     }

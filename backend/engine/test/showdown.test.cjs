@@ -1,6 +1,5 @@
 const { Showdown } = require("../showdown.js");
 
-// Minimal mock Pot class for testing
 class MockPot {
   constructor() {
     this.contributions = new Map();
@@ -20,7 +19,6 @@ class MockPot {
   }
 }
 
-// Minimal mock player class
 class MockPlayer {
   constructor(name, cards, state = "ready") {
     this.name = name;
@@ -40,14 +38,13 @@ describe("Showdown.evaluate", () => {
   let pot;
 
   beforeEach(() => {
-    // Players with simple card strings for pokersolver
     players = [
-      new MockPlayer("Alice", ["As", "Ks"]), // Ace & King of spades
-      new MockPlayer("Bob", ["Ah", "Kh"]),   // Ace & King of hearts
-      new MockPlayer("Charlie", ["2c", "3d"], "folded"), // folded, should be ignored
+      new MockPlayer("Alice", ["As", "Ks"]),
+      new MockPlayer("Bob", ["Ah", "Kh"]),
+      new MockPlayer("Charlie", ["2c", "3d"], "folded"),
     ];
 
-    communityCards = ["Qs", "Js", "Ts", "9s", "8s"]; // 5 community cards
+    communityCards = ["Qs", "Js", "Ts", "9s", "8s"];
 
     pot = new MockPot();
     pot.addContribution("Alice", 100);
@@ -57,7 +54,7 @@ describe("Showdown.evaluate", () => {
   test("evaluates the winning player correctly", () => {
     const { winners } = Showdown.evaluate(players, communityCards, []);
     expect(winners.length).toBe(1);
-    expect(["Alice", "Bob"]).toContain(winners[0].name); // Either Alice or Bob wins
+    expect(["Alice", "Bob"]).toContain(winners[0].name);
   });
 
   test("ignores folded or left players", () => {
@@ -73,7 +70,6 @@ describe("Showdown.evaluate", () => {
     expect(payouts[0].name).toBe("Alice");
     expect(payouts[0].amount).toBe(200);;
 
-    // Player stacks updated correctly
     const alice = players.find((p) => p.name === "Alice");
     expect(alice.stack).toBe(200);
   });
@@ -85,7 +81,7 @@ describe("Showdown.evaluate", () => {
   });
 
   test("returns empty payouts if pot is empty or winners not eligible", () => {
-    const emptyPot = new MockPot(); // no contributions
+    const emptyPot = new MockPot(); 
     const { payouts } = Showdown.evaluate(players, communityCards, [emptyPot]);
     expect(payouts).toEqual([]);
   });

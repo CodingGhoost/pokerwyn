@@ -5,7 +5,6 @@ const { PlayerState } = require("./player");
 
 class Showdown {
     static evaluate(players, communityCards, pots) {
-        // Include IN_GAME and all-in players, exclude folded and left players
         const activePlayers = players.filter(
             (p) => (p.state === PlayerState.IN_GAME || p.isAllIn) && 
                    p.state !== PlayerState.FOLDED && 
@@ -19,7 +18,6 @@ class Showdown {
             return { winners: [], payouts: [] };
         }
 
-        // If only one player, they win by default
         if (activePlayers.length === 1) {
             const winner = activePlayers[0];
             console.log(`🏆 ${winner.name} wins by default (everyone else folded)`);
@@ -30,6 +28,7 @@ class Showdown {
                     const potPayouts = pot.distribute([winner.name]);
                     for (const pay of potPayouts) {
                         winner.stack += pay.amount;
+                        pay.handDescription = "Opponents Folded";
                     }
                     payouts.push(...potPayouts);
                 }
@@ -38,7 +37,6 @@ class Showdown {
             return { winners: [winner], payouts };
         }
 
-        // Evaluate hands for showdown
         const hands = activePlayers.map((p) => {
             const allCards = [...p.getCards(), ...communityCards];
             const solved = Hand.solve(allCards);
@@ -58,7 +56,6 @@ class Showdown {
 
         console.log(`🏆 Winner(s): ${winners.map(w => w.name).join(', ')}`);
 
-        // Distribute pot(s)
         let payouts = [];
         if (pots && pots.length > 0) {
             for (const pot of pots) {
@@ -77,6 +74,12 @@ class Showdown {
 
                 for (const pay of potPayouts) {
                     const player = players.find((p) => p.name === pay.name);
+                    
+                    const winningHandData = hands.find(h => h.player.name === pay.name);
+                    if (winningHandData) {
+                        pay.handDescription = winningHandData.hand.descr;
+                    }
+
                     if (player) {
                         player.stack += pay.amount;
                         console.log(`💰 ${player.name} receives ${pay.amount} chips (new stack: ${player.stack})`);

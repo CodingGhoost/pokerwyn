@@ -78,7 +78,7 @@ describe("Pot class", () => {
         { name: "Alice", amount: 100 },
         { name: "Bob", amount: 100 },
       ]);
-      expect(pot.total).toBe(0); // pot is reset after distribution
+      expect(pot.total).toBe(0);
     });
 
     test("handles uneven split correctly (floating division)", () => {

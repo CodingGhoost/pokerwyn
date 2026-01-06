@@ -29,7 +29,6 @@ describe("Validator class", () => {
     validator = new Validator(table);
   });
 
-  // ──────────────────────────────────────────────
   test("validatePlayer returns valid player", () => {
     const result = validator.validatePlayer("Alice");
     expect(result).toBe(player);
@@ -53,7 +52,6 @@ describe("Validator class", () => {
     );
   });
 
-  // ──────────────────────────────────────────────
   describe("validateAction", () => {
     test("validates FOLD correctly", () => {
       expect(validator.validateAction(player, "FOLD")).toBe(true);
@@ -131,7 +129,6 @@ describe("Validator class", () => {
     });
   });
 
-  // ──────────────────────────────────────────────
   describe("validateNextBettingRound", () => {
     test("returns true when valid", () => {
       table.communityCards = [1, 2, 3];
@@ -140,14 +137,12 @@ describe("Validator class", () => {
 
     test("throws when more than 5 cards", () => {
       table.communityCards = [1, 2, 3, 4, 5, 6];
-      // fix bug: local var 'n' should be 'num', but test expects error message as written
       expect(() => validator.validateNextBettingRound()).toThrow(
         "Cannot deal more than 5 community cards."
       );
     });
   });
 
-  // ──────────────────────────────────────────────
   describe("validateShowdown", () => {
     test("throws if less than 5 community cards", () => {
       table.communityCards = [1, 2, 3, 4];

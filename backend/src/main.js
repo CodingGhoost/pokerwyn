@@ -5,19 +5,50 @@ const express = require("express");
 const { Server } = require("socket.io");
 
 const Table = require("../engine/table");
-const { Player } = require("../engine/player"); // ✅ correct
+const { Player } = require("../engine/player");
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
-const table = new Table(9);
+const table = new Table();
+
+let globalActionTimeout = null;
+
+function resetTurnTimer() {
+    // Clear existing timer
+    if (globalActionTimeout) {
+        clearTimeout(globalActionTimeout);
+        globalActionTimeout = null;
+    }
+
+    // If valid player to act start a new timer
+    if (table.currentPlayerIndex !== -1 && table.handInProgress) {
+        globalActionTimeout = setTimeout(() => {
+            const currentPlayer = table.players[table.currentPlayerIndex];
+            if (currentPlayer) {
+                console.log(`⏰ ${currentPlayer.name} timed out - auto-folding`);
+                
+                table.playerAction(currentPlayer.name, "FOLD", 0);
+                
+                table.broadcast(io);
+                
+                // Recursively reset timer
+                resetTurnTimer();
+            }
+        }, 30000);  // 30 seconds
+    }
+}
+
+// Update table event handler to reset timer on async state changes (like the 2s delay)
+table.setEventHandler(() => {
+    io.emit("state", table.getState());
+    resetTurnTimer(); // Ensure timer restarts after the 2s delay
+});
 
 io.on("connection", (socket) => {
   console.log(`🟢 Player connected: ${socket.id}`);
   socket.emit("state", table.getState());
-
-  let actionTimeout = null;
 
   socket.on("join", ({ name, stack }) => {
     const seatIndex = table.players.length;
@@ -37,37 +68,17 @@ io.on("connection", (socket) => {
   });
 
   socket.on("action", ({ name, action, amount }) => {
-    if (actionTimeout) {
-      clearTimeout(actionTimeout);
-      actionTimeout = null;
-    }
-
     const success = table.playerAction(name, action, amount);
     if (success) {
       table.broadcast(io);
-      
-      // Set timeout for next player (30 seconds)
-      if (table.currentPlayerIndex !== -1) {
-        actionTimeout = setTimeout(() => {
-          const currentPlayer = table.players[table.currentPlayerIndex];
-          if (currentPlayer) {
-            console.log(`⏰ ${currentPlayer.name} timed out - auto-folding`);
-            table.playerAction(currentPlayer.name, "FOLD", 0);
-            table.broadcast(io);
-          }
-        }, 30000);
-      }
+      resetTurnTimer(); // Reset master timer
     }
   });
 
   socket.on("start-hand", () => {
     const ok = table.startHand();
     if (!ok) {
-        // Check if game is over
-        const playersWithChips = table.players.filter(p => 
-            p.state !== 'LEFT' && p.stack > 0
-        );
-        
+        const playersWithChips = table.players.filter(p => p.state !== 'LEFT' && p.stack > 0);
         if (playersWithChips.length === 1) {
             io.emit("game-over", {
                 winner: playersWithChips[0].name,
@@ -79,19 +90,75 @@ io.on("connection", (socket) => {
         }
         return;
     }
-
     table.broadcast(io);
-  });
-
-  socket.on("next-round", () => {
-    table.nextBettingRound();
-    table.broadcast(io);
+    resetTurnTimer(); // Start timer for first player
   });
 
   socket.on("disconnect", () => {
     table.removePlayerBySocketId(socket.id);
     table.broadcast(io);
     console.log(`🔴 Player disconnected: ${socket.id}`);
+  });
+
+  socket.on("add-bot", () => {
+    const seatIndex = table.players.length;
+    const botName = "Bot-" + Math.floor(Math.random() * 100);
+    
+    // Create a new player
+    const newBot = new Player(seatIndex, botName);
+    newBot.stack = 1000;
+    newBot.isBot = true;
+    newBot.socketId = "BOT-" + botName; 
+
+    const success = table.addPlayer(newBot);
+    if (success) {
+        console.log(`🤖 ${botName} added to table`);
+        table.broadcast(io);
+    } else {
+        socket.emit("error", "Table is full");
+    }
+  });
+
+  socket.on('sendChat', ({ tableId, text }) => {
+    const currentTable = table; 
+    
+    if (!currentTable) return;
+    if (!text || typeof text !== 'string') return;
+
+    // Identify Sender
+    let senderName = "Spectator";
+    const player = currentTable.players.find(p => p.socketId === socket.id);
+    if (player) {
+        senderName = player.name;
+    }
+
+    // Add to Table State
+    const msg = currentTable.addChatMessage(senderName, text);
+
+    // Broadcast to everyone
+    io.emit('chatUpdate', msg); 
+  });
+
+  socket.on('toggleBotKick', (seatIndex) => {
+      table.toggleBotKick(seatIndex);
+  });
+
+  socket.on('showHand', () => {
+      // Find player by socket ID
+      const player = table.players.find(p => p.socketId === socket.id);
+      if (player) {
+          table.showHand(player.seatIndex);
+      }
+  });
+
+  socket.on('rebuy', ({ amount }) => {
+      table.rebuyPlayer(socket.id, amount);
+  });
+
+  socket.on('resetTable', () => {
+      table.hardReset();
+      // Tell all clients to drop their seat and go back to login screen
+      io.emit('tableReset'); 
   });
 });
 

@@ -2,7 +2,7 @@ const Deck = require('../deck.js');
 
 test('deck should have 52 unique cards', () => {
   const deck = new Deck();
-  const cards = deck.cards; // access cards directly
+  const cards = deck.cards;
   expect(cards.length).toBe(52);
 
   const unique = new Set(cards);
@@ -11,7 +11,7 @@ test('deck should have 52 unique cards', () => {
 
 test('deck should deal cards properly', () => {
   const deck = new Deck();
-  const card = deck.deal(); // use correct method name
+  const card = deck.deal();
   expect(card).toBeDefined();
   expect(deck.cards.length).toBe(51);
 });

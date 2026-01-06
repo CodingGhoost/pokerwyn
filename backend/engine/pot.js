@@ -35,7 +35,7 @@ class Pot {
 
         const payouts = winners.map((name, index) => ({
             name,
-            amount: share + (index < remainder ? 1 : 0), // Give remainder to first winner(s)
+            amount: share + (index < remainder ? 1 : 0),
         }));
 
         this.total = 0;

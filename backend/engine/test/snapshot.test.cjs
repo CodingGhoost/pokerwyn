@@ -2,7 +2,6 @@
 
 const Snapshot = require("../snapshot.js");
 
-// Minimal mock player class
 class MockPlayer {
   constructor(name, stack, currentBet, state, cards) {
     this.name = name;
@@ -17,7 +16,6 @@ class MockPlayer {
   }
 }
 
-// Minimal mock pot class
 class MockPot {
   constructor(total, contributions = {}) {
     this.total = total;
@@ -25,7 +23,6 @@ class MockPot {
   }
 }
 
-// Minimal mock table
 class MockTable {
   constructor() {
     this.players = [
@@ -110,7 +107,6 @@ describe("Snapshot", () => {
     expect(typeof jsonObj).toBe("object");
     expect(jsonObj.players).toBeDefined();
 
-    // Ensure toJSONString() produces a string
     const jsonStr = snapshot.toJSONString();
     expect(typeof jsonStr).toBe("string");
     const parsed = JSON.parse(jsonStr);
